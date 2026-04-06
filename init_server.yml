@@ -1,0 +1,62 @@
+---
+- name: 服务器自动化初始化
+  hosts: test_servers
+  become: yes
+  vars:
+    ssh_port: 2222
+    env_type: "test"
+
+  tasks:
+    - name: 创建 deploy 用户
+      user:
+        name: deploy
+        groups: wheel
+        append: yes
+        shell: /bin/bash
+        create_home: yes
+
+    - name: 设置 deploy 用户 sudo 权限
+      lineinfile:
+        path: /etc/sudoers.d/deploy
+        line: 'deploy ALL=(ALL) NOPASSWD: ALL'
+        create: yes
+        mode: 0440
+
+    - name: 安装常用软件包
+      dnf:
+        name:
+          - vim
+          - net-tools
+          - htop
+        state: present
+
+    - name: 修改 SSH 端口
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?Port '
+        line: 'Port {{ ssh_port }}'
+      notify: restart sshd
+
+    - name: 禁止 root 登录
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify: restart sshd
+
+    - name: 安装并启动时间同步服务
+      dnf:
+        name: chrony
+        state: present
+
+    - name: 启动 chronyd
+      service:
+        name: chronyd
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: restart sshd
+      service:
+        name: sshd
+        state: restarted
